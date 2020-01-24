@@ -1,0 +1,2 @@
+sc stop smamonitoringagent
+sc delete smamonitoringagent
