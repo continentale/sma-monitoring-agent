@@ -104,6 +104,10 @@ type CoreUsage struct {
 	Usage   []float64
 }
 
+/*
+ * Function to validate authorization ouf our REST-API.
+ * uses the useSecret param in agent.ini
+ */
 func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := LoadIni()
@@ -121,16 +125,18 @@ func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Ha
 	})
 }
 
+/*
+ * Function to dertermine the current disk usage via WMI.
+ *
+ */
 func DiskUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_LogicalDisk
 
 	dl := r.URL.Query()["name"]
-
 	qu := "WHERE MediaType ='12'"
 
 	if len(dl) > 0 {
-
 		qu = "WHERE Name LIKE'%" + dl[0] + "%'"
 	}
 	q := wmi.CreateQuery(&dst, qu)
