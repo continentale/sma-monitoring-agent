@@ -2,11 +2,11 @@
  * @package   sma-monitoring-agent
  * @copyright sma-monitoring-agent contributors
  * @license   GNU Affero General Public License (https://www.gnu.org/licenses/agpl-3.0.de.html)
- *
+ * @authors   https://github.com/continentale/sma-monitoring-agent/graphs/contributors
  * @todo lots of documentation
  *
  *
- * Windows Monitoring Agent wiht REST-API
+ * Windows Monitoring Agent with REST-API
  */
 
 package main
@@ -59,6 +59,7 @@ type Win32_Processor struct {
 	LoadPercentage int
 	Name           string
 }
+
 type Win32_Service struct {
 	Caption string
 	Name    string
@@ -70,6 +71,7 @@ type Win32_OperatingSystem struct {
 	TotalVirtualMemorySize int
 	FreeVirtualMemory      int
 }
+
 type AgentVersion struct {
 	Version   string
 	BuildTime string
@@ -106,9 +108,13 @@ type CoreUsage struct {
 	Usage   []float64
 }
 
+type Application struct {
+	srv *http.Server
+}
+
 /*
-* Function to validate authorization ouf our REST-API.
-* uses the useSecret param in agent.ini
+ * Function to validate authorization ouf our REST-API.
+ * uses the useSecret param in agent.ini
  */
 func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,19 +133,18 @@ func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Ha
 }
 
 /*
-* Function to dertermine the current disk usage via WMI.
-*
+ * DiskUsage is used to dertermine the current disk usage via WMI.
+ * Data source is Win32_LogicalDisk
+ * default filter is fixed disk with MediaType 12
  */
 func DiskUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_LogicalDisk
 
 	dl := r.URL.Query()["name"]
-
 	qu := "WHERE MediaType ='12'"
 
 	if len(dl) > 0 {
-
 		qu = "WHERE Name LIKE'%" + dl[0] + "%'"
 	}
 	q := wmi.CreateQuery(&dst, qu)
@@ -156,19 +161,22 @@ func DiskUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonData)
-
 }
 
+/*
+ * ProcessList is used to dertermine if a program is running
+ * Data source is WMI Win32_Process
+ * without filter all processes are shown
+ * it's possible to filter via Name attribute, wildcards allowed
+ */
 func ProcessList(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Process
 
 	dl := r.URL.Query()["name"]
-
 	qu := ""
 
 	if len(dl) > 0 {
-
 		qu = "WHERE Name LIKE '%" + dl[0] + "%'"
 	}
 	q := wmi.CreateQuery(&dst, qu)
@@ -188,6 +196,11 @@ func ProcessList(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * Function WinService shows status of windows services.
+ * data source is WMI Win32_Service
+ * if no param is set all services with type Autostart will be validated
+ */
 func WinService(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Service
@@ -196,7 +209,6 @@ func WinService(w http.ResponseWriter, r *http.Request) {
 	qu := "WHERE StartMode LIKE '%Auto%'"
 
 	if len(dl) > 0 {
-
 		qu = "WHERE Name='" + dl[0] + "'"
 	}
 	q := wmi.CreateQuery(&dst, qu)
@@ -216,6 +228,10 @@ func WinService(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * Function MemoryUsage shows memory usage statistics.
+ * data source is WMI Win32_OperatingSystem
+ */
 func MemoryUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_OperatingSystem
@@ -235,6 +251,11 @@ func MemoryUsage(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * InventoryService collects basic system information
+ * primary data source is WMI Win32_ComputerSystem
+ * used to provide basic inventory data
+ */
 func InventoryService(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_ComputerSystem
@@ -269,6 +290,10 @@ func InventoryService(w http.ResponseWriter, r *http.Request) {
 	dstp = nil
 }
 
+/*
+ * Function CPUUsage shows CPU usage statistics.
+ * data source is WMI Win32_Processor
+ */
 func CPUUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Processor
@@ -289,6 +314,10 @@ func CPUUsage(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * Function  CPUUsageByCore shows detailed CPU usage statistics.
+ * currently beta, can fail with multi cpu systems and a lot of cores..
+ */
 func CPUUsageByCore(w http.ResponseWriter, r *http.Request) {
 
 	cpuStat, _ := cpu.Info()
@@ -305,18 +334,16 @@ func CPUUsageByCore(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonData)
-
 }
 
+/*
+ * Function ShowVersion displays the agent version
+ */
 func ShowVersion(w http.ResponseWriter, r *http.Request) {
 	agent := AgentVersion{Version: Version, BuildTime: BuildTime, GitHash: GitHash}
 	jsonData, _ := json.Marshal(agent)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonData)
-}
-
-type Application struct {
-	srv *http.Server
 }
 
 func main() {
@@ -423,7 +450,6 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 	yes := cfg.Section("commands").HasKey(name)
 	var check Check
 	if yes {
-
 		params := cfg.Section("commands").Key(name).String()
 		params = "/c " + params
 		args := strings.Fields(params)
@@ -481,6 +507,10 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * Function LoadIni  is used to load the agent.ini file
+ * os variable AGENT_INI_PATH can be used to load it from a custom location.
+ */
 func LoadIni() (cfg *ini.File) {
 
 	path := os.Getenv("AGENT_INI_PATH")
