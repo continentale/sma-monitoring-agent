@@ -59,6 +59,7 @@ type Win32_Processor struct {
 	LoadPercentage int
 	Name           string
 }
+
 type Win32_Service struct {
 	Caption string
 	Name    string
@@ -70,6 +71,7 @@ type Win32_OperatingSystem struct {
 	TotalVirtualMemorySize int
 	FreeVirtualMemory      int
 }
+
 type AgentVersion struct {
 	Version   string
 	BuildTime string
@@ -104,6 +106,10 @@ type Win32_ComputerSystemProduct struct {
 type CoreUsage struct {
 	CPUType []cpu.InfoStat
 	Usage   []float64
+}
+
+type Application struct {
+	srv *http.Server
 }
 
 /*
@@ -163,7 +169,6 @@ func DiskUsage(w http.ResponseWriter, r *http.Request) {
  * without filter all processes are shown
  * it's possible to filter via Name attribute, wildcards allowed
  */
-
 func ProcessList(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Process
@@ -192,7 +197,7 @@ func ProcessList(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
- * Function  WinService shows status of windows services.
+ * Function WinService shows status of windows services.
  * data source is WMI Win32_Service
  * if no param is set all services with type Autostart will be validated
  */
@@ -224,7 +229,7 @@ func WinService(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
- * Function  MemoryUsage shows memory usage statistics.
+ * Function MemoryUsage shows memory usage statistics.
  * data source is WMI Win32_OperatingSystem
  */
 func MemoryUsage(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +251,11 @@ func MemoryUsage(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * InventoryService collects basic system information
+ * primary data source is WMI Win32_ComputerSystem
+ * used to provide basic inventory data
+ */
 func InventoryService(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_ComputerSystem
@@ -281,7 +291,7 @@ func InventoryService(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
- * Function  CPUUsage shows CPU usage statistics.
+ * Function CPUUsage shows CPU usage statistics.
  * data source is WMI Win32_Processor
  */
 func CPUUsage(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +318,6 @@ func CPUUsage(w http.ResponseWriter, r *http.Request) {
  * Function  CPUUsageByCore shows detailed CPU usage statistics.
  * currently beta, can fail with multi cpu systems and a lot of cores..
  */
-
 func CPUUsageByCore(w http.ResponseWriter, r *http.Request) {
 
 	cpuStat, _ := cpu.Info()
@@ -330,16 +339,11 @@ func CPUUsageByCore(w http.ResponseWriter, r *http.Request) {
 /*
  * Function ShowVersion displays the agent version
  */
-
 func ShowVersion(w http.ResponseWriter, r *http.Request) {
 	agent := AgentVersion{Version: Version, BuildTime: BuildTime, GitHash: GitHash}
 	jsonData, _ := json.Marshal(agent)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonData)
-}
-
-type Application struct {
-	srv *http.Server
 }
 
 func main() {
@@ -446,7 +450,6 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 	yes := cfg.Section("commands").HasKey(name)
 	var check Check
 	if yes {
-
 		params := cfg.Section("commands").Key(name).String()
 		params = "/c " + params
 		args := strings.Fields(params)
