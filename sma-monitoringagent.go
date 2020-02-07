@@ -34,11 +34,14 @@ var (
 	Version   = "1.0.0"
 	BuildTime = "2015-08-01 UTC"
 	GitHash   = ""
+
+	endpointMemoryMap map[string]map[string]string
 )
 
 type Check struct {
-	Output   string
-	ExitCode int
+	Output        string
+	InMemoryValue string
+	ExitCode      int
 }
 
 type Win32_LogicalDisk struct {
@@ -48,9 +51,8 @@ type Win32_LogicalDisk struct {
 }
 
 type Win32_Process struct {
-	Name        string
-	Caption     string
-	Commandline string
+	Name    string
+	Caption string
 }
 
 type Win32_Processor struct {
@@ -105,8 +107,8 @@ type CoreUsage struct {
 }
 
 /*
- * Function to validate authorization ouf our REST-API.
- * uses the useSecret param in agent.ini
+* Function to validate authorization ouf our REST-API.
+* uses the useSecret param in agent.ini
  */
 func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +120,6 @@ func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Ha
 				return
 			}
 			endpoint(w, r)
-
 		} else {
 			endpoint(w, r)
 		}
@@ -126,24 +127,26 @@ func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Ha
 }
 
 /*
- * Function to dertermine the current disk usage via WMI.
- *
+* Function to dertermine the current disk usage via WMI.
+*
  */
 func DiskUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_LogicalDisk
 
 	dl := r.URL.Query()["name"]
+
 	qu := "WHERE MediaType ='12'"
 
 	if len(dl) > 0 {
+
 		qu = "WHERE Name LIKE'%" + dl[0] + "%'"
 	}
 	q := wmi.CreateQuery(&dst, qu)
 
 	err := wmi.Query(q, &dst)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 
 	var jsonData []byte
@@ -161,36 +164,18 @@ func ProcessList(w http.ResponseWriter, r *http.Request) {
 	var dst []Win32_Process
 
 	dl := r.URL.Query()["name"]
-	cl := r.URL.Query()["commandline"]
-	re := regexp.MustCompile(`([^\\\"])\\([^\\\"])`)
 
 	qu := ""
 
 	if len(dl) > 0 {
-		dl[0] = strings.ReplaceAll(dl[0], "\\\"", "\"")
-		dl[0] = re.ReplaceAllString(dl[0], "$1\\\\$2")
+
 		qu = "WHERE Name LIKE '%" + dl[0] + "%'"
 	}
-	if len(cl) > 0 {
-		cl[0] = strings.ReplaceAll(cl[0], "\\\"", "\"")
-		cl[0] = re.ReplaceAllString(cl[0], "$1\\\\$2")
-		qu = "WHERE commandline LIKE '%" + cl[0] + "%'"
-
-	}
-	if len(dl) > 0 && len(cl) > 0 {
-		dl[0] = strings.ReplaceAll(dl[0], "\\\"", "\"")
-		dl[0] = re.ReplaceAllString(dl[0], "$1\\\\$2")
-
-		cl[0] = strings.ReplaceAll(cl[0], "\\\"", "\"")
-		cl[0] = re.ReplaceAllString(cl[0], "$1\\\\$2")
-		qu = "WHERE Name LIKE '%" + dl[0] + "%' AND  commandline LIKE '%" + cl[0] + "%'"
-	}
-
 	q := wmi.CreateQuery(&dst, qu)
 
 	err := wmi.Query(q, &dst)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 
 	var jsonData []byte
@@ -212,13 +197,13 @@ func WinService(w http.ResponseWriter, r *http.Request) {
 
 	if len(dl) > 0 {
 
-		qu = "WHERE Name LIKE '%" + dl[0] + "%'"
+		qu = "WHERE Name='" + dl[0] + "'"
 	}
 	q := wmi.CreateQuery(&dst, qu)
 
 	err := wmi.Query(q, &dst)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 
 	var jsonData []byte
@@ -237,7 +222,7 @@ func MemoryUsage(w http.ResponseWriter, r *http.Request) {
 	q := wmi.CreateQuery(&dst, "")
 	err := wmi.Query(q, &dst)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 
 	var jsonData []byte
@@ -257,7 +242,7 @@ func InventoryService(w http.ResponseWriter, r *http.Request) {
 	q := wmi.CreateQuery(&dst, "")
 	err := wmi.Query(q, &dst)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 	dst[0].Model = strings.Trim(dst[0].Model, " ")
 	dst[0].Manufacturer = strings.Trim(dst[0].Manufacturer, " ")
@@ -266,7 +251,7 @@ func InventoryService(w http.ResponseWriter, r *http.Request) {
 	qp := wmi.CreateQuery(&dstp, "")
 	errp := wmi.Query(qp, &dstp)
 	if errp != nil {
-		log.Println(errp)
+		log.Fatal(errp)
 	}
 
 	dstp[0].IdentifyingNumber = strings.Trim(dstp[0].IdentifyingNumber, " ")
@@ -290,7 +275,7 @@ func CPUUsage(w http.ResponseWriter, r *http.Request) {
 	q := wmi.CreateQuery(&dst, "")
 	err := wmi.Query(q, &dst)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 
 	var jsonData []byte
@@ -335,6 +320,8 @@ type Application struct {
 }
 
 func main() {
+	endpointMemoryMap = make(map[string]map[string]string)
+
 	winsvc.Run(func(ctx context.Context) {
 		app := New()
 		if err := app.Run(ctx); err != nil {
@@ -402,18 +389,53 @@ func (a *Application) Run(ctx context.Context) error {
 		return a.srv.ListenAndServe()
 	}
 }
-func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 
+func parseCommandArgs(url, name string, arguments []string) []string {
+	cfg := LoadIni()
+	for i := range arguments {
+		if arguments[i][0] == '$' {
+			param := cfg.Section(name).Key(strings.Replace(arguments[i], "$", "", -1)).String()
+			if param == "DATE" || param == "JSON" {
+				// param is true or json get value from memory
+				arguments[i] = endpointMemoryMap[url][strings.Replace(arguments[i], "$", "", -1)]
+			} else if strings.Replace(arguments[i], "$", "", -1) == cfg.Section(name).Key(arguments[i][1:len(arguments[i])-1]).String() {
+				// Variable Name is the type. Get single value from the json
+				tmpMap := make(map[string]string)
+				err := json.Unmarshal([]byte(endpointMemoryMap[url]["JSON"]), &tmpMap)
+				if err != nil {
+					log.Println(err)
+				}
+				arguments[i] = tmpMap[arguments[i][1:len(arguments[i])-1]]
+			} else {
+				// get value from the key
+				arguments[i] = param
+			}
+		}
+	}
+	return arguments
+}
+
+func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 	var waitStatus syscall.WaitStatus
+
 	name := r.URL.Query().Get("name")
 	cfg := LoadIni()
 	yes := cfg.Section("commands").HasKey(name)
-
-	if yes == true {
+	var check Check
+	if yes {
 
 		params := cfg.Section("commands").Key(name).String()
 		params = "/c " + params
 		args := strings.Fields(params)
+
+		arguments := r.URL.Query()["args"]
+
+		if r.URL.Query().Get("variables") == "true" {
+			parseCommandArgs(r.URL.String(), name, arguments)
+		}
+
+		args = append(args, arguments...)
+
 		cmd := exec.Command("cmd", args...)
 		out, err := cmd.CombinedOutput()
 
@@ -427,9 +449,12 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 			waitStatus = cmd.ProcessState.Sys().(syscall.WaitStatus)
 		}
 
-		check := Check{
-			Output:   strings.TrimSpace(string(out)),
-			ExitCode: waitStatus.ExitStatus(),
+		outString := string(out)
+
+		check.Output = strings.TrimSpace(outString[:strings.Index(outString, "{{")] + outString[strings.Index(outString, "}}")+2:])
+		check.ExitCode = waitStatus.ExitStatus()
+		if strings.Index(outString, "{{") != -1 && strings.Index(outString, "}}") != -1 {
+			check.InMemoryValue = outString[strings.Index(outString, "{{")+1 : strings.LastIndex(outString, "}}")+1]
 		}
 
 		jsonData, _ := json.Marshal(check)
@@ -442,6 +467,18 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(jsonData)
 	}
+
+	// set arguments only when URL-Parameter is given
+	if r.URL.Query().Get("variables") == "true" {
+
+		if _, isSet := endpointMemoryMap[r.URL.String()]["DATE"]; !isSet {
+			endpointMemoryMap[r.URL.String()] = make(map[string]string)
+		}
+
+		endpointMemoryMap[r.URL.String()]["JSON"] = check.InMemoryValue
+		endpointMemoryMap[r.URL.String()]["DATE"] = fmt.Sprint(time.Now().Unix())
+	}
+
 }
 
 func LoadIni() (cfg *ini.File) {
