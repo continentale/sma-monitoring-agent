@@ -107,8 +107,8 @@ type CoreUsage struct {
 }
 
 /*
-* Function to validate authorization ouf our REST-API.
-* uses the useSecret param in agent.ini
+ * Function to validate authorization ouf our REST-API.
+ * uses the useSecret param in agent.ini
  */
 func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,8 +127,8 @@ func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Ha
 }
 
 /*
-* Function to dertermine the current disk usage via WMI.
-*
+ * Function to dertermine the current disk usage via WMI.
+ *
  */
 func DiskUsage(w http.ResponseWriter, r *http.Request) {
 
@@ -481,6 +481,10 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 
 }
 
+/*
+ * Function LoadIni  is used to load the agent.ini file
+ * os variable AGENT_INI_PATH can be used to load it from a custom location.
+ */
 func LoadIni() (cfg *ini.File) {
 
 	path := os.Getenv("AGENT_INI_PATH")
