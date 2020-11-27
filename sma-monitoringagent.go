@@ -31,13 +31,16 @@ import (
 )
 
 var (
-	Version   = "1.0.0"
+	// Version displays the current version of the agent. Ususally it is overwritten within the build pipeline
+	Version = "1.0.0"
+	// BuildTime is the time the program is build. Usually it is overwritten within the build pipeline
 	BuildTime = "2015-08-01 UTC"
-	GitHash   = ""
-
+	// GitHash is the git commit hash from the build. Usually it is overwritten within the build pipeline
+	GitHash           = ""
 	endpointMemoryMap map[string]map[string]string
 )
 
+// Check displays a nagios compliant check as a struct
 type Check struct {
 	Output        string
 	InMemoryValue string
@@ -65,6 +68,7 @@ type Win32_Service struct {
 	Name    string
 	State   string
 }
+
 type Win32_OperatingSystem struct {
 	TotalVisibleMemorySize int
 	FreePhysicalMemory     int
@@ -72,6 +76,7 @@ type Win32_OperatingSystem struct {
 	FreeVirtualMemory      int
 }
 
+// AgentVersion contains all relevant information about git commit and versioning of the program for a specific time. Usually it is filled in a pipeline
 type AgentVersion struct {
 	Version   string
 	BuildTime string
@@ -132,11 +137,9 @@ func isAuthorized(endpoint func(w http.ResponseWriter, r *http.Request)) http.Ha
 	})
 }
 
-/*
- * DiskUsage is used to dertermine the current disk usage via WMI.
- * Data source is Win32_LogicalDisk
- * default filter is fixed disk with MediaType 12
- */
+// DiskUsage is used to dertermine the current disk usage via WMI.
+// Data source is Win32_LogicalDisk
+// default filter is fixed disk with MediaType 12
 func DiskUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_LogicalDisk
@@ -163,12 +166,10 @@ func DiskUsage(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonData)
 }
 
-/*
- * ProcessList is used to dertermine if a program is running
- * Data source is WMI Win32_Process
- * without filter all processes are shown
- * it's possible to filter via Name attribute, wildcards allowed
- */
+// ProcessList is used to dertermine if a program is running
+// Data source is WMI Win32_Process
+// without filter all processes are shown
+// it's possible to filter via Name attribute, wildcards allowed
 func ProcessList(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Process
@@ -196,11 +197,9 @@ func ProcessList(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
- * Function WinService shows status of windows services.
- * data source is WMI Win32_Service
- * if no param is set all services with type Autostart will be validated
- */
+// WinService shows status of windows services.
+// data source is WMI Win32_Service
+// if no param is set all services with type Autostart will be validated
 func WinService(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Service
@@ -228,10 +227,8 @@ func WinService(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
- * Function MemoryUsage shows memory usage statistics.
- * data source is WMI Win32_OperatingSystem
- */
+// MemoryUsage shows memory usage statistics.
+// data source is WMI Win32_OperatingSystem
 func MemoryUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_OperatingSystem
@@ -251,11 +248,9 @@ func MemoryUsage(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
- * InventoryService collects basic system information
- * primary data source is WMI Win32_ComputerSystem
- * used to provide basic inventory data
- */
+// InventoryService collects basic system information
+// primary data source is WMI Win32_ComputerSystem
+// used to provide basic inventory data
 func InventoryService(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_ComputerSystem
@@ -290,10 +285,8 @@ func InventoryService(w http.ResponseWriter, r *http.Request) {
 	dstp = nil
 }
 
-/*
- * Function CPUUsage shows CPU usage statistics.
- * data source is WMI Win32_Processor
- */
+// CPUUsage shows CPU usage statistics.
+// data source is WMI Win32_Processor
 func CPUUsage(w http.ResponseWriter, r *http.Request) {
 
 	var dst []Win32_Processor
@@ -314,10 +307,8 @@ func CPUUsage(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
- * Function  CPUUsageByCore shows detailed CPU usage statistics.
- * currently beta, can fail with multi cpu systems and a lot of cores..
- */
+// CPUUsageByCore shows detailed CPU usage statistics.
+// currently beta, can fail with multi cpu systems and a lot of cores..
 func CPUUsageByCore(w http.ResponseWriter, r *http.Request) {
 
 	cpuStat, _ := cpu.Info()
@@ -336,9 +327,7 @@ func CPUUsageByCore(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonData)
 }
 
-/*
- * Function ShowVersion displays the agent version
- */
+// ShowVersion displays the agent version
 func ShowVersion(w http.ResponseWriter, r *http.Request) {
 	agent := AgentVersion{Version: Version, BuildTime: BuildTime, GitHash: GitHash}
 	jsonData, _ := json.Marshal(agent)
@@ -362,6 +351,7 @@ func main() {
 	// that is why recommendation is to not write any logic
 }
 
+// New contains the windows service logic
 func New() *Application {
 
 	cfg := LoadIni()
@@ -393,6 +383,7 @@ func New() *Application {
 	return &Application{srv: server}
 }
 
+// Run starts the api-web-server.
 func (a *Application) Run(ctx context.Context) error {
 	log.Print("[INFO] started REST-API server version: " + Version)
 
@@ -400,26 +391,31 @@ func (a *Application) Run(ctx context.Context) error {
 		defer log.Print("[WARN] shutdown REST-API server")
 		// shutdown on context cancellation
 		<-ctx.Done()
-		c, _ := context.WithTimeout(context.Background(), time.Second*5)
+		c, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
 		a.srv.Shutdown(c)
 	}()
+
+	// load config file and place all relevant data in variables for easy use
 	cfg := LoadIni()
 	port := cfg.Section("server").Key("port").String()
 	protocol := cfg.Section("server").Key("protocol").String()
 	cert := cfg.Section("server").Key("certificate").String()
 	privkey := cfg.Section("server").Key("privatekey").String()
 
+	// start webserver
 	log.Println("[INFO] started http server on port: " + port)
 	if protocol == "https" {
 		return a.srv.ListenAndServeTLS(cert, privkey)
-	} else {
-		return a.srv.ListenAndServe()
 	}
+	return a.srv.ListenAndServe()
 }
 
 func parseCommandArgs(url, name string, arguments []string) []string {
 	cfg := LoadIni()
+	// run through all url arguments => specified with args
 	for i := range arguments {
+		// if args begins with $ then it needs more parsing
 		if arguments[i][0] == '$' {
 			param := cfg.Section(name).Key(strings.Replace(arguments[i], "$", "", -1)).String()
 			if param == "DATE" || param == "JSON" {
@@ -430,7 +426,7 @@ func parseCommandArgs(url, name string, arguments []string) []string {
 				tmpMap := make(map[string]string)
 				err := json.Unmarshal([]byte(endpointMemoryMap[url]["JSON"]), &tmpMap)
 				if err != nil {
-					log.Println(err)
+					log.Println("Failed to unmarshal JSON:", err)
 				}
 				arguments[i] = tmpMap[arguments[i][1:len(arguments[i])-1]]
 			} else {
@@ -442,6 +438,7 @@ func parseCommandArgs(url, name string, arguments []string) []string {
 	return arguments
 }
 
+// ExecuteScript runs local placed scripts as a custom executor
 func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 	var waitStatus syscall.WaitStatus
 
@@ -476,8 +473,7 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 		}
 
 		outString := string(out)
-
-		check.Output = strings.TrimSpace(outString[:strings.Index(outString, "{{")] + outString[strings.Index(outString, "}}")+2:])
+		check.Output = outString
 		check.ExitCode = waitStatus.ExitStatus()
 		if strings.Index(outString, "{{") != -1 && strings.Index(outString, "}}") != -1 {
 			check.InMemoryValue = outString[strings.Index(outString, "{{")+1 : strings.LastIndex(outString, "}}")+1]
@@ -507,14 +503,11 @@ func ExecuteScript(w http.ResponseWriter, r *http.Request) {
 
 }
 
-/*
- * Function LoadIni  is used to load the agent.ini file
- * os variable AGENT_INI_PATH can be used to load it from a custom location.
- */
+// LoadIni  is used to load the agent.ini file
+// os variable AGENT_INI_PATH can be used to load it from a custom location.
 func LoadIni() (cfg *ini.File) {
 
 	path := os.Getenv("AGENT_INI_PATH")
-
 	cfg, err := ini.Load(path + "agent.ini")
 	if err != nil {
 		fmt.Printf("Fail to read file: %v", err)
