@@ -1,4 +1,6 @@
 # sma-monitoring-agent
+DEPRECATED: this agent is deprecated and will no longer be maintained. please follow the new agent on https://github.com/continentale/monitoring-agent
+
 SMA-MonitoringAgent is a Windows based agent written in Golang to monitor a windows system. The main feature is collection 
 basic system information such as CPU, disk and memory usage, running processes and services and to present the collected data via REST-API.
 
